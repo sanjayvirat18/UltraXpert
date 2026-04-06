@@ -1,148 +1,142 @@
 import SwiftUI
 import PhotosUI
-import UIKit
 
+// MARK: - UploadScanView
+// A lightweight entry-point wrapper for the scan upload flow.
+// Used when navigating to scan upload from contexts outside the Dashboard.
 struct UploadScanView: View {
 
-    @State private var showSourceSheet = false
-    @State private var showCamera = false
+    @AppStorage("themeColor") private var themeColorName = "Blue"
+    private var themeColor: Color { ThemeManager.shared.color(for: themeColorName) }
 
-    @State private var showPhotosPicker = false
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
-
     @State private var selectedImage: UIImage? = nil
-    @State private var goNext = false
-
+    @State private var navigateToEnhance = false
+    @State private var showCamera = false
     @State private var showAlert = false
     @State private var alertMsg = ""
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-
         NavigationStack {
+            ZStack {
+                Color(.systemGroupedBackground)
+                    .ignoresSafeArea()
 
-            VStack(spacing: 18) {
+                VStack(spacing: 28) {
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Upload Scan")
-                        .font(.title2).bold()
+                    // Header Icon
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [themeColor.opacity(0.18), themeColor.opacity(0.06)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 100, height: 100)
 
-                    Text("Select scan source")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        Image(systemName: "square.and.arrow.up.on.square.fill")
+                            .font(.system(size: 42, weight: .semibold))
+                            .foregroundStyle(themeColor)
+                    }
+                    .padding(.top, 40)
+
+                    VStack(spacing: 8) {
+                        Text("Upload a Scan")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.primary)
+
+                        Text("Choose a source to upload your medical scan for AI enhancement.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 30)
+                    }
+
+                    // Upload Options
+                    VStack(spacing: 16) {
+
+                        // Gallery
+                        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                            uploadOptionRow(
+                                title: "Import from Gallery",
+                                subtitle: "Select an existing scan image",
+                                icon: "photo.fill.on.rectangle.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        // Camera
+                        Button {
+                            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                                showCamera = true
+                            } else {
+                                alertMsg = "Camera not available on this device."
+                                showAlert = true
+                            }
+                        } label: {
+                            uploadOptionRow(
+                                title: "Capture with Camera",
+                                subtitle: "Take a new photo now",
+                                icon: "camera.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 24)
+
+                    Spacer()
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.shield")
+                            .font(.caption)
+                        Text("All scans are processed securely on-device.")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 30)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                ZStack {
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(Color(.systemGray6))
-                        .frame(height: 220)
-
-                    if let img = selectedImage {
-                        Image(uiImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 220)
-                            .clipShape(RoundedRectangle(cornerRadius: 18))
+            }
+            .navigationTitle("Upload Scan")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $navigateToEnhance) {
+                if let img = selectedImage {
+                    EnhancementSelectionView(image: img)
+                }
+            }
+            .sheet(isPresented: $showCamera, onDismiss: {
+                if let img = selectedImage {
+                    if img.isMostlyGrayscale() {
+                        navigateToEnhance = true
                     } else {
-                        VStack(spacing: 10) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 38, weight: .semibold))
-                                .foregroundStyle(.blue)
-
-                            Text("No scan selected")
-                                .foregroundStyle(.secondary)
-                        }
+                        selectedImage = nil
+                        alertMsg = "This image can't be analyzed. Please capture a valid MRI, X-Ray, or Ultrasound scan."
+                        showAlert = true
                     }
                 }
-
-                Button {
-                    showSourceSheet = true
-                } label: {
-                    Text("Choose Scan")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.blue)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-
-                Button {
-                    if selectedImage != nil {
-                        goNext = true
-                    }
-                } label: {
-                    Text("Continue")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(selectedImage == nil ? Color(.systemGray4) : Color.black)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-                .disabled(selectedImage == nil)
-
-                Spacer()
-            }
-            .padding()
-
-            .navigationDestination(isPresented: $goNext) {
-                ScanPreviewView(scanImage: selectedImage ?? UIImage())
-            }
-
-            .sheet(isPresented: $showSourceSheet) {
-                ScanSourceSheet(
-                    onPhotos: {
-                        showSourceSheet = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            showPhotosPicker = true
-                        }
-                    },
-                    onCamera: {
-                        showSourceSheet = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            openCamera()
-                        }
-                    }
-                )
-                .presentationDetents([.height(220)])
-            }
-
-            .photosPicker(
-                isPresented: $showPhotosPicker,
-                selection: $selectedPhotoItem,
-                matching: .images
-            )
-
-            .sheet(isPresented: $showCamera) {
+            }) {
                 CameraPicker(image: $selectedImage)
                     .ignoresSafeArea()
             }
-
             .onChange(of: selectedPhotoItem) { _, newItem in
                 guard let newItem else { return }
-
                 Task {
-                    do {
-                        if let data = try await newItem.loadTransferable(type: Data.self),
-                           let uiImage = UIImage(data: data) {
-
-                            // ✅ FIX ROTATION
-                            let fixed = uiImage.normalized()
-
-                            await MainActor.run {
-                                selectedImage = fixed
-                            }
-                        } else {
-                            await MainActor.run {
-                                alertMsg = "Invalid image selected."
-                                showAlert = true
-                            }
-                        }
-                    } catch {
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
+                       let uiImage = UIImage(data: data) {
                         await MainActor.run {
-                            alertMsg = "Unable to load image."
-                            showAlert = true
+                            let normalizedImg = uiImage.normalized()
+                            if normalizedImg.isMostlyGrayscale() {
+                                self.selectedImage = normalizedImg
+                                self.navigateToEnhance = true
+                            } else {
+                                self.selectedPhotoItem = nil
+                                self.alertMsg = "This image can't be analyzed. Please upload a valid MRI, X-Ray, or Ultrasound scan."
+                                self.showAlert = true
+                            }
                         }
                     }
                 }
@@ -155,12 +149,86 @@ struct UploadScanView: View {
         }
     }
 
-    private func openCamera() {
-        if UIImagePickerController.isSourceTypeAvailable(.camera) {
-            showCamera = true
-        } else {
-            alertMsg = "Camera not available. Please test on a real iPhone device."
-            showAlert = true
+    // MARK: - Upload Option Card
+    private func uploadOptionRow(title: String, subtitle: String, icon: String) -> some View {
+        HStack(spacing: 0) {
+
+            LinearGradient(
+                colors: [themeColor, themeColor.opacity(0.35)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(width: 4)
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 20,
+                    bottomLeadingRadius: 20,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: 0
+                )
+            )
+
+            HStack(spacing: 18) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    themeColor.opacity(colorScheme == .dark ? 0.32 : 0.16),
+                                    themeColor.opacity(colorScheme == .dark ? 0.12 : 0.06)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 56, height: 56)
+
+                    Image(systemName: icon)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(themeColor)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(themeColor.opacity(0.5))
+            }
+            .padding(.vertical, 18)
+            .padding(.leading, 18)
+            .padding(.trailing, 16)
         }
+        .background(
+            colorScheme == .dark
+                ? Color(white: 0.12)
+                : Color(.systemBackground)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(
+                    colorScheme == .dark
+                        ? Color.white.opacity(0.08)
+                        : Color.black.opacity(0.06),
+                    lineWidth: 0.8
+                )
+        )
+        .shadow(
+            color: themeColor.opacity(colorScheme == .dark ? 0.14 : 0.10),
+            radius: 10, x: 0, y: 5
+        )
     }
+}
+
+#Preview {
+    UploadScanView()
 }

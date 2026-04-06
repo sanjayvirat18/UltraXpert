@@ -1,0 +1,75 @@
+import SwiftUI
+import Combine
+
+struct EnhancementResult: Identifiable {
+    let id = UUID()
+    let originalImage: UIImage
+    let enhancedImage: UIImage
+    let date: Date
+    let improvementPercentage: String
+}
+
+// MARK: - Analytics ViewModel / Store
+@MainActor
+class AnalyticsStore: ObservableObject {
+    @Published var latestEnhancement: EnhancementResult?
+    @Published var history: [EnhancementResult] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    
+    private let scanService: ScanServiceProtocol
+    
+    init(scanService: ScanServiceProtocol = ScanService()) {
+        self.scanService = scanService
+        Task {
+            await fetchHistory()
+        }
+    }
+    
+    func fetchHistory() async {
+        self.isLoading = true
+        self.errorMessage = nil
+        do {
+            let responses = try await scanService.getAnalytics()
+            
+            // Map the history. We will rely on placeholder images for demo 
+            // since we don't have async image fetching setup right now
+            let results = responses.map { res in
+                EnhancementResult(
+                    originalImage: UIImage(systemName: "photo")!,
+                    enhancedImage: UIImage(systemName: "photo.badge.checkmark")!,
+                    date: Date(),
+                    improvementPercentage: res.improvement_percentage ?? "0%"
+                )
+            }
+            
+            self.history = results
+            self.latestEnhancement = results.first
+        } catch {
+            self.errorMessage = "Failed to load scan analytics: \(error.localizedDescription)"
+        }
+        self.isLoading = false
+    }
+    
+    func saveEnhancement(original: UIImage, enhanced: UIImage) {
+        let result = EnhancementResult(
+            originalImage: original,
+            enhancedImage: enhanced,
+            date: Date(),
+            improvementPercentage: "+142%" // Mock value for demo
+        )
+        
+        latestEnhancement = result
+        history.insert(result, at: 0)
+        
+        // Mock save against service
+        Task {
+            do {
+                let url = try await scanService.uploadScan(image: original)
+                _ = try await scanService.enhanceScan(patientId: "P-\(Int.random(in: 1000...9999))", imageUrl: url)
+            } catch {
+                print("Analytics Sync Error: \(error)")
+            }
+        }
+    }
+}

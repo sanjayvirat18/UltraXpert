@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>UltraXpert needs access to your camera to let you take profile pictures and capture live ultrasound images for AI enhancement.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>UltraXpert needs access to your photo library to let you select profile pictures and upload your ultrasound scans for AI enhancement.</string>
+</dict>
+</plist>

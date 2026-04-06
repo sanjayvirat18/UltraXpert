@@ -1,23 +1,15 @@
-//
-//  ImagePicker.swift
-//  UltraXpert
-//
-//  Created by sanjaysadha on 04/02/26.
-//
-
-
 import SwiftUI
 import UIKit
 
-struct ImagePicker: UIViewControllerRepresentable {
+struct PhotoPicker: UIViewControllerRepresentable {
 
-    @Environment(\.dismiss) private var dismiss
     @Binding var image: UIImage?
+    @Environment(\.dismiss) private var dismiss
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.delegate = context.coordinator
-        picker.allowsEditing = false
+        picker.sourceType = .photoLibrary
         return picker
     }
 
@@ -27,17 +19,20 @@ struct ImagePicker: UIViewControllerRepresentable {
         Coordinator(self)
     }
 
-    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
-        let parent: ImagePicker
+    class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
 
-        init(_ parent: ImagePicker) {
+        let parent: PhotoPicker
+
+        init(_ parent: PhotoPicker) {
             self.parent = parent
         }
 
-        func imagePickerController(_ picker: UIImagePickerController,
-                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            if let img = info[.originalImage] as? UIImage {
-                parent.image = img
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]
+        ) {
+            if let image = info[.originalImage] as? UIImage {
+                parent.image = image
             }
             parent.dismiss()
         }

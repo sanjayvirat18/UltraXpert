@@ -1,110 +1,26 @@
 import SwiftUI
 import PhotosUI
+import UIKit
 
-// MARK: - Patient Model
-struct Patient: Identifiable, Hashable {
-    let id = UUID()
-    var patientID: String
-    var name: String
-    var age: String
-    var gender: String
-    var createdAt: Date = Date()
-    var ultrasoundImages: [UIImage] = []
-}
-
-// MARK: - Patients Screen (TAB)
-struct PatientsScreen: View {
-
-    @State private var patients: [Patient] = [
-        Patient(patientID: "PT-1001", name: "Ravi Kumar", age: "32", gender: "Male"),
-        Patient(patientID: "PT-1002", name: "Anjali Sharma", age: "28", gender: "Female")
-    ]
-
-    @State private var searchText = ""
-    @State private var showAddPatient = false
-
-    var filteredPatients: [Patient] {
-        if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return patients
-        } else {
-            return patients.filter {
-                $0.name.lowercased().contains(searchText.lowercased()) ||
-                $0.patientID.lowercased().contains(searchText.lowercased())
-            }
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-
-                // Header
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Patients")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-
-                    Text("Manage patient records and attach ultrasound scans.")
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                .padding(.top, 10)
-
-                // List
-                List {
-                    Section(header: Text("Patient Records")) {
-                        ForEach(filteredPatients.indices, id: \.self) { index in
-                            NavigationLink {
-                                PatientDetailScreen(patient: $patients[index])
-                            } label: {
-                                PatientRow(patient: filteredPatients[index])
-                            }
-                        }
-                        .onDelete(perform: deletePatient)
-                    }
-                }
-                .listStyle(.insetGrouped)
-            }
-            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always))
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showAddPatient = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
-                    }
-                }
-            }
-            .sheet(isPresented: $showAddPatient) {
-                AddPatientSheet { newPatient in
-                    patients.insert(newPatient, at: 0)
-                }
-            }
-        }
-    }
-
-    private func deletePatient(at offsets: IndexSet) {
-        patients.remove(atOffsets: offsets)
-    }
-}
+// Note: Models (Patient, ImprovementItem) extracted to PatientStore.swift
 
 // MARK: - Patient Row
 struct PatientRow: View {
 
     let patient: Patient
+    @AppStorage("themeColor") private var themeColorName = "Blue"
+    private var themeColor: Color { ThemeManager.shared.color(for: themeColorName) }
 
     var body: some View {
         HStack(spacing: 12) {
 
             ZStack {
                 Circle()
-                    .fill(Color.blue.opacity(0.15))
+                    .fill(themeColor.opacity(0.15))
                     .frame(width: 44, height: 44)
 
                 Image(systemName: "person.fill")
-                    .foregroundColor(.blue)
+                    .foregroundColor(themeColor)
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -126,6 +42,71 @@ struct PatientRow: View {
     }
 }
 
+struct PatientsScreen: View {
+
+    @Environment(\.dismiss) var dismiss // <-- needed for back button
+    @EnvironmentObject var patientStore: PatientStore
+
+    @State private var searchText = ""
+    @State private var showAddPatient = false
+
+    var filteredPatients: [Patient] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if q.isEmpty { return patientStore.patients }
+        return patientStore.patients.filter {
+            $0.name.lowercased().contains(q) || $0.patientID.lowercased().contains(q)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(filteredPatients.indices, id: \.self) { index in
+                     // We need to find the binding in the store. 
+                     // Since filteredPatients is a computed property, we can't get a direct binding easily for all cases if filtering is active.
+                     // However, for typical SwiftUI navigation to detail with binding:
+                     // We can find the index in the original array.
+                     if let realIndex = patientStore.patients.firstIndex(where: { $0.id == filteredPatients[index].id }) {
+                         NavigationLink {
+                             PatientDetailScreen(patient: $patientStore.patients[realIndex])
+                         } label: {
+                             PatientRow(patient: filteredPatients[index])
+                         }
+                     }
+                }
+                .onDelete(perform: deletePatient)
+            }
+            .listStyle(.insetGrouped)
+            .searchable(text: $searchText)
+            .navigationTitle("Patients")
+            .toolbar {
+                // Add patient button on trailing
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showAddPatient = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                    }
+                }
+            }
+            .sheet(isPresented: $showAddPatient) {
+                AddPatientView()
+            }
+        }
+    }
+
+    private func deletePatient(at offsets: IndexSet) {
+        let snapshot = filteredPatients
+        let itemsToDelete = offsets.map { snapshot[$0] }
+        
+        for item in itemsToDelete {
+            if let index = patientStore.patients.firstIndex(where: { $0.id == item.id }) {
+                patientStore.patients.remove(at: index)
+            }
+        }
+    }
+}
+
 // MARK: - Patient Detail Screen
 struct PatientDetailScreen: View {
 
@@ -135,14 +116,13 @@ struct PatientDetailScreen: View {
     @State private var selectedImage: UIImage? = nil
 
     var body: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             VStack(spacing: 18) {
 
                 // Patient info card
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 12) {
                     Text(patient.name)
-                        .font(.title2)
-                        .fontWeight(.bold)
+                        .font(.title2.bold())
 
                     Divider()
 
@@ -152,19 +132,42 @@ struct PatientDetailScreen: View {
 
                     Text("Created: \(patient.createdAt.formatted(date: .abbreviated, time: .shortened))")
                         .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 6)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
                 }
-                .padding()
+                .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(.secondarySystemBackground))
-                .cornerRadius(18)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                
+                // History Button
+                NavigationLink {
+                    PatientHistoryView(patientName: patient.name)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 20))
+                            .foregroundColor(.purple)
+                        
+                        Text("View Medical History")
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
 
                 // Attach ultrasound button
                 Button {
                     showImagePicker = true
                 } label: {
-                    HStack {
+                    HStack(spacing: 10) {
                         Image(systemName: "paperclip")
                         Text("Attach Ultrasound Image")
                             .fontWeight(.semibold)
@@ -173,12 +176,12 @@ struct PatientDetailScreen: View {
                     }
                     .padding()
                     .foregroundColor(.white)
-                    .background(Color.blue)
-                    .cornerRadius(18)
+                    .background(ThemeManager.shared.color(for: (UserDefaults.standard.string(forKey: "themeColor") ?? "Blue")))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
 
-                // Uploaded scans section
-                VStack(alignment: .leading, spacing: 10) {
+                // Attached scans
+                VStack(alignment: .leading, spacing: 12) {
                     Text("Attached Scans")
                         .font(.headline)
 
@@ -186,49 +189,71 @@ struct PatientDetailScreen: View {
                         Text("No scans attached yet.")
                             .foregroundColor(.secondary)
                             .font(.subheadline)
-                            .padding(.top, 4)
+                            .padding(.top, 2)
                     } else {
-                        ForEach(patient.ultrasoundImages.indices, id: \.self) { index in
-                            NavigationLink {
-                                PatientScanDetailScreen(
-                                    patientName: patient.name,
-                                    image: patient.ultrasoundImages[index]
-                                )
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(uiImage: patient.ultrasoundImages[index])
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 70, height: 70)
-                                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        VStack(spacing: 12) {
+                            ForEach(patient.ultrasoundImages.indices, id: \.self) { index in
+                                NavigationLink {
+                                    UltrasoundScanScreen(
+                                        patientName: patient.name,
+                                        patientId: patient.patientID,
+                                        age: patient.age,
+                                        gender: patient.gender,
+                                        scanType: "Abdomen",
+                                        scanDate: "29 Jan 2026",
+                                        beforeImage: patient.ultrasoundImages[index],
+                                        afterImage: patient.ultrasoundImages[index],
+                                        beforePercent: 62,
+                                        afterPercent: 89,
+                                        totalImprovementPercent: 27,
+                                        avgQualityGain: 37,
+                                        improvements: [
+                                            ImprovementItem(title: "Noise Reduced", value: "High", icon: "waveform.path.ecg"),
+                                            ImprovementItem(title: "Sharpness", value: "+22%", icon: "scope"),
+                                            ImprovementItem(title: "Contrast", value: "+18%", icon: "circle.lefthalf.filled"),
+                                            ImprovementItem(title: "Brightness", value: "+12%", icon: "sun.max.fill")
+                                        ]
+                                    )
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(uiImage: patient.ultrasoundImages[index])
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 64, height: 64)
+                                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                                            .clipped()
 
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Ultrasound Scan \(index + 1)")
-                                            .font(.headline)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Ultrasound Scan \(index + 1)")
+                                                .font(.headline)
 
-                                        Text("Tap to view and enhance")
-                                            .font(.caption)
+                                            Text("Tap to view report")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
                                             .foregroundColor(.secondary)
+                                            .font(.caption)
                                     }
-
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .foregroundColor(.secondary)
-                                        .font(.caption)
+                                    .padding(14)
+                                    .background(Color(.secondarySystemBackground))
+                                    .clipShape(RoundedRectangle(cornerRadius: 16))
                                 }
-                                .padding()
-                                .background(Color(.secondarySystemBackground))
-                                .cornerRadius(18)
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Spacer(minLength: 30)
+                Spacer(minLength: 24)
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 90) // IMPORTANT: avoids TabBar overlap
         }
         .background(Color(.systemBackground))
         .navigationTitle("Patient Details")
@@ -243,94 +268,191 @@ struct PatientDetailScreen: View {
     }
 }
 
-// MARK: - Scan Detail Screen (Enhancement Link)
-struct PatientScanDetailScreen: View {
+// MARK: - Ultrasound Scan Screen (FULL FIXED)
+struct UltrasoundScanScreen: View {
 
     let patientName: String
-    let image: UIImage
+    let patientId: String
+    let age: String
+    let gender: String
+    let scanType: String
+    let scanDate: String
+
+    let beforeImage: UIImage
+    let afterImage: UIImage
+
+    let beforePercent: Int
+    let afterPercent: Int
+    let totalImprovementPercent: Int
+    let avgQualityGain: Int
+
+    let improvements: [ImprovementItem]
+
+    private let gridColumns = [
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14)
+    ]
+
+    @State private var showAnnotation = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 18) {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
 
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .cornerRadius(18)
-                    .shadow(radius: 6)
+                // MARK: Before / After (GRID FIX)
+                LazyVGrid(columns: gridColumns, spacing: 14) {
+                    ScanImageCard(title: "Before", percent: beforePercent, image: beforeImage)
+                    ScanImageCard(title: "After", percent: afterPercent, image: afterImage)
+                }
 
-                Text("Patient: \(patientName)")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // MARK: Patient Info
+                sectionTitle("Patient Information")
 
-                // Actions
-                VStack(spacing: 12) {
+                VStack(spacing: 10) {
+                    InfoRow(title: "Name", value: patientName)
+                    InfoRow(title: "Patient ID", value: patientId)
+                    InfoRow(title: "Age", value: age)
+                    InfoRow(title: "Gender", value: gender)
+                    InfoRow(title: "Scan Type", value: scanType)
+                    InfoRow(title: "Scan Date", value: scanDate)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 18))
 
-                    NavigationLink(destination: EnhancementView()) {
-                        ActionButton(title: "Enhance Image", icon: "circle", color: .blue)
-                    }
+                // MARK: Enhancement Summary
+                sectionTitle("Enhancement Summary")
 
-                    NavigationLink(destination: SmartEnhanceView()) {
-                        ActionButton(title: "Smart Enhance (AI)", icon: "sparkles", color: .blue)
+                LazyVGrid(columns: gridColumns, spacing: 14) {
+                    StatMiniCard(title: "Total Improvement", value: "\(totalImprovementPercent)%", icon: "sparkles")
+                    StatMiniCard(title: "Avg Quality Gain", value: "\(avgQualityGain)%", icon: "chart.line.uptrend.xyaxis")
+                }
+
+                // MARK: Improvements
+                sectionTitle("Improvements")
+
+                VStack(spacing: 10) {
+                    ForEach(improvements) { item in
+                        HStack(spacing: 12) {
+                            Image(systemName: item.icon)
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(ThemeManager.shared.color(for: (UserDefaults.standard.string(forKey: "themeColor") ?? "Blue")))
+                                .frame(width: 42, height: 42)
+                                .background(ThemeManager.shared.color(for: (UserDefaults.standard.string(forKey: "themeColor") ?? "Blue")).opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.title)
+                                    .font(.headline)
+
+                                Text(item.value)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+                        }
+                        .padding(14)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
                     }
                 }
 
-                Spacer(minLength: 30)
+                Spacer(minLength: 24)
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 100) // IMPORTANT: avoid tab bar overlap
         }
         .background(Color(.systemBackground))
         .navigationTitle("Ultrasound Scan")
         .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-// MARK: - Add Patient Sheet
-struct AddPatientSheet: View {
-
-    @Environment(\.dismiss) var dismiss
-
-    @State private var patientID = ""
-    @State private var name = ""
-    @State private var age = ""
-    @State private var gender = "Male"
-
-    let onSave: (Patient) -> Void
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section(header: Text("Patient Information")) {
-                    TextField("Patient ID (ex: PT-1003)", text: $patientID)
-                    TextField("Full Name", text: $name)
-                    TextField("Age", text: $age)
-
-                    Picker("Gender", selection: $gender) {
-                        Text("Male").tag("Male")
-                        Text("Female").tag("Female")
-                        Text("Other").tag("Other")
-                    }
-                }
-            }
-            .navigationTitle("Add Patient")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
-                        let newPatient = Patient(
-                            patientID: patientID.isEmpty ? "PT-\(Int.random(in: 1000...9999))" : patientID,
-                            name: name.isEmpty ? "Unknown Patient" : name,
-                            age: age.isEmpty ? "-" : age,
-                            gender: gender
-                        )
-                        onSave(newPatient)
-                        dismiss()
-                    }
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showAnnotation = true
+                } label: {
+                    Image(systemName: "pencil.tip.crop.circle")
                 }
             }
         }
+        .sheet(isPresented: $showAnnotation) {
+            ScanAnnotationView()
+        }
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+        .font(.title3.bold())
+        .padding(.top, 4)
+    }
+}
+
+// MARK: - Scan Image Card (No Clipping)
+struct ScanImageCard: View {
+
+    let title: String
+    let percent: Int
+    let image: UIImage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+
+            HStack {
+                Text(title)
+                    .font(.headline.bold())
+                Spacer()
+                Text("\(percent)%")
+                    .font(.headline.bold())
+                    .foregroundColor(ThemeManager.shared.color(for: (UserDefaults.standard.string(forKey: "themeColor") ?? "Blue")))
+            }
+
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(height: 140)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .clipped()
+        }
+        .padding(12)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+// MARK: - Stat Mini Card
+struct StatMiniCard: View {
+
+    let title: String
+    let value: String
+    let icon: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(ThemeManager.shared.color(for: (UserDefaults.standard.string(forKey: "themeColor") ?? "Blue")))
+                .frame(width: 42, height: 42)
+                .background(ThemeManager.shared.color(for: (UserDefaults.standard.string(forKey: "themeColor") ?? "Blue")).opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+
+            Text(value)
+                .font(.system(size: 26, weight: .bold))
+
+            Text(title)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity)
+        .frame(height: 140)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
     }
 }
 
@@ -342,32 +464,12 @@ struct InfoRow: View {
     var body: some View {
         HStack {
             Text(title)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             Spacer()
             Text(value)
                 .fontWeight(.semibold)
         }
         .font(.subheadline)
-    }
-}
-
-struct ActionButton: View {
-    let title: String
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-            Text(title)
-                .fontWeight(.semibold)
-            Spacer()
-            Image(systemName: "chevron.right")
-        }
-        .padding()
-        .foregroundColor(.white)
-        .background(color)
-        .cornerRadius(18)
     }
 }
 
@@ -415,15 +517,9 @@ struct PatientImagePicker: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - Dummy Screens (Replace with your actual ones)
-struct SmartEnhancementView: View {
-    var body: some View {
-        Text("Smart Enhance Screen")
-            .navigationTitle("Smart Enhance")
-    }
-}
-
 // MARK: - Preview
 #Preview {
-    PatientsScreen()
+    NavigationStack {
+        PatientsScreen()
+    }
 }

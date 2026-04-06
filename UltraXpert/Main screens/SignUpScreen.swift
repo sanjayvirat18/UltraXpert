@@ -3,13 +3,10 @@ import SwiftUI
 struct SignUpScreen: View {
 
     @Environment(\.dismiss) var dismiss
+    @AppStorage("themeColor") private var themeColorName = "Blue"
+    private var themeColor: Color { ThemeManager.shared.color(for: themeColorName) }
 
-    @State private var fullName = ""
-    @State private var email = ""
-    @State private var licenseID = ""
-    @State private var password = ""
-    @State private var confirmPassword = ""
-    @State private var agreed = false
+    @StateObject private var viewModel = SignUpViewModel()
 
     var body: some View {
         ScrollView {
@@ -27,22 +24,22 @@ struct SignUpScreen: View {
                 inputField(
                     title: "Full Name",
                     placeholder: "Dr. Jane Smith",
-                    text: $fullName
+                    text: $viewModel.fullName
                 )
 
                 // MARK: - Email
                 inputField(
                     title: "Email Address",
                     placeholder: "doctor@hospital.org",
-                    text: $email,
+                    text: $viewModel.email,
                     keyboard: .emailAddress
                 )
 
                 // MARK: - Medical License ID
                 inputField(
                     title: "Medical License ID",
-                    placeholder: "ML-123456789",
-                    text: $licenseID
+                    placeholder: "123456",
+                    text: $viewModel.licenseID
                 )
 
                 Text("Your state medical license number")
@@ -53,23 +50,23 @@ struct SignUpScreen: View {
                 secureField(
                     title: "Password",
                     placeholder: "Minimum 8 characters",
-                    text: $password
+                    text: $viewModel.password
                 )
 
                 // MARK: - Confirm Password
                 secureField(
                     title: "Confirm Password",
                     placeholder: "Re-enter password",
-                    text: $confirmPassword
+                    text: $viewModel.confirmPassword
                 )
 
                 // MARK: - Terms Checkbox
                 HStack(alignment: .top, spacing: 12) {
                     Button {
-                        agreed.toggle()
+                        viewModel.agreed.toggle()
                     } label: {
-                        Image(systemName: agreed ? "checkmark.square.fill" : "square")
-                            .foregroundColor(agreed ? .blue : .gray)
+                        Image(systemName: viewModel.agreed ? "checkmark.square.fill" : "square")
+                            .foregroundColor(viewModel.agreed ? themeColor : .gray)
                     }
 
                     Text("I agree to the Terms of Service, Privacy Policy, and HIPAA Business Associate Agreement. I confirm I am a licensed medical professional.")
@@ -79,17 +76,30 @@ struct SignUpScreen: View {
 
                 // MARK: - Create Account Button (FIXED ✅)
                 Button {
-                    // later: validation + API
-                    dismiss()   // 👈 THIS IS THE KEY FIX
+                    viewModel.signUp {
+                        dismiss()
+                    }
                 } label: {
-                    Text("Create Account")
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(agreed ? Color.blue : Color.blue.opacity(0.4))
-                        .cornerRadius(14)
+                    if viewModel.isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                    } else if viewModel.showSuccess {
+                        Image(systemName: "checkmark")
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                    } else {
+                        Text("Create Account")
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                    }
                 }
-                .disabled(!agreed)
+                .disabled(!viewModel.agreed || viewModel.isLoading)
+                .background(viewModel.agreed ? themeColor : themeColor.opacity(0.4))
+                .cornerRadius(14)
                 .padding(.top, 10)
 
                 // MARK: - Already Have Account
@@ -101,13 +111,20 @@ struct SignUpScreen: View {
                     Button("Sign In") {
                         dismiss()
                     }
-                    .foregroundColor(.blue)
+                    .foregroundColor(themeColor)
 
                     Spacer()
                 }
                 .padding(.top, 10)
             }
             .padding(.horizontal, 24)
+        }
+        .alert(isPresented: $viewModel.showError) {
+            Alert(
+                title: Text("Sign Up Failed"),
+                message: Text(viewModel.errorMessage ?? "An unknown error occurred."),
+                dismissButton: .default(Text("OK"))
+            )
         }
     }
 
